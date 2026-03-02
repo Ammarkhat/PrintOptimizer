@@ -8,8 +8,12 @@ import useAppStore from '../store/useAppStore';
 const PrivateRoute = ({ children }) => {
   const user = useAppStore((s) => s.user);
 
-  // user is null  → not authenticated
-  // user is object → authenticated
+  // user is undefined → auth state still resolving
+  // user is null      → not authenticated
+  // user is object    → authenticated
+  if (user === undefined) {
+    return null;
+  }
   if (user === null) {
     return <Navigate to="/login" replace />;
   }

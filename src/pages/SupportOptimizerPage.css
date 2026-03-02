@@ -38,7 +38,7 @@
   border: 1px solid #0f3460;
   border-radius: 12px;
   overflow: hidden;
-  min-height: 420px;
+  min-height: 72vh;
 }
 
 .sr-viewer-placeholder {
@@ -47,7 +47,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  min-height: 420px;
+  min-height: 72vh;
   gap: 1rem;
   color: #475569;
 }

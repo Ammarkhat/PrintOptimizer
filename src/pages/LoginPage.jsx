@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loginUser, registerUser } from '../firebase/authService';
+import { login, signUp } from '../firebase/authService';
 import './LoginPage.css';
 
 const LoginPage = () => {
@@ -17,9 +17,9 @@ const LoginPage = () => {
     setLoading(true);
     try {
       if (isRegister) {
-        await registerUser(email, password);
+        await signUp(email, password);
       } else {
-        await loginUser(email, password);
+        await login(email, password);
       }
       navigate('/');
     } catch (err) {

@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAuthListener from './hooks/useAuthListener';
 import PrivateRoute from './components/PrivateRoute';
+import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
-import SupportReductionPage from './pages/SupportReductionPage';
+import SupportOptimizerPage from './pages/SupportOptimizerPage';
 
 function App() {
   useAuthListener();
@@ -16,18 +17,13 @@ function App() {
           path="/"
           element={
             <PrivateRoute>
-              <DashboardPage />
+              <Layout />
             </PrivateRoute>
           }
-        />
-        <Route
-          path="/support-reduction"
-          element={
-            <PrivateRoute>
-              <SupportReductionPage />
-            </PrivateRoute>
-          }
-        />
+        >
+          <Route index element={<DashboardPage />} />
+          <Route path="support-optimizer" element={<SupportOptimizerPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

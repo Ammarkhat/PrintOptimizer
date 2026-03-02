@@ -18,16 +18,21 @@ export const uploadSTL = async (userId, file, folder = 'original') => {
 /**
  * Save optimization metadata to Firestore.
  */
-export const saveOptimizationRecord = async ({
-  userId,
-  originalFileURL,
-  optimizedFileURL,
-}) => {
+export const saveOptimizationRecord = async (data) => {
+  const { userId, originalFileURL, optimizedFileURL, tool } = data ?? {};
+
+  if (!userId || !originalFileURL || !optimizedFileURL) {
+    throw new Error(
+      'saveOptimizationRecord: userId, originalFileURL, and optimizedFileURL are required.'
+    );
+  }
+
   const docRef = await addDoc(collection(db, 'optimizations'), {
     userId,
     originalFileURL,
     optimizedFileURL,
-    timestamp: serverTimestamp(),
+    createdAt: serverTimestamp(),
+    tool: tool ?? 'support-reduction',
   });
   return docRef.id;
 };

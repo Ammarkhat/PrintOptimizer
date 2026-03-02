@@ -10,6 +10,12 @@
   z-index: 100;
 }
 
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
 .navbar-brand {
   font-size: 1.25rem;
   font-weight: 700;
@@ -22,6 +28,28 @@
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+.navbar-links {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.navbar-link {
+  color: #a0aec0;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+}
+
+.navbar-link.is-active {
+  color: #e2e8f0;
+  text-decoration: underline;
+  text-decoration-color: #e94560;
+  text-underline-offset: 6px;
 }
 
 .navbar-email {
