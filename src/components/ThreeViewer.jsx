@@ -175,6 +175,7 @@ const ThreeViewer = ({
     style,
     className,
     onFaceClick,
+    showWireframe = false,
     disposeGeometryOnUnmount = false,
 }) => {
     const mountRef = useRef(null);
@@ -191,6 +192,9 @@ const ThreeViewer = ({
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(width, height);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.4;
         mount.appendChild(renderer.domElement);
 
         const scene = new THREE.Scene();
@@ -198,26 +202,66 @@ const ThreeViewer = ({
 
         const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
 
-        const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+        // Ambient base — bright so shadows never go fully black
+        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambient);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-        dirLight.position.set(6, 10, 8);
-        scene.add(dirLight);
+        // Hemisphere sky/ground — warm top, cool bounce from below
+        const hemi = new THREE.HemisphereLight(0xe8eef7, 0x1a253a, 0.55);
+        scene.add(hemi);
+
+        // Key light — strong front-right-top
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+        keyLight.position.set(8, 14, 10);
+        scene.add(keyLight);
+
+        // Fill light — soft left side, slightly warm
+        const fillLight = new THREE.DirectionalLight(0xffd9b3, 1.0);
+        fillLight.position.set(-12, 8, -4);
+        scene.add(fillLight);
+
+        // Rim light — back-left highlights silhouettes
+        const rimLight = new THREE.DirectionalLight(0xc8d8ff, 0.75);
+        rimLight.position.set(-6, 5, -14);
+        scene.add(rimLight);
+
+        // Under-fill — faint bounce light from below to reveal bottom details
+        const underLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        underLight.position.set(0, -10, 0);
+        scene.add(underLight);
+
+        // Detail point light — near top centre to catch small surface features
+        const detailLight = new THREE.PointLight(0xdde8ff, 0.6, 800);
+        detailLight.position.set(0, 20, 0);
+        scene.add(detailLight);
 
         const bed = createPrinterBed(renderer, { width: 256, depth: 256 });
         scene.add(bed);
 
         const material = new THREE.MeshStandardMaterial({
             color: 0x93c5fd,
-            metalness: 0.1,
-            roughness: 0.75,
+            metalness: 0.05,
+            roughness: 0.38,
+            flatShading: false,
             vertexColors: Boolean(resolved.geometry.getAttribute?.('color')),
         });
 
         const mesh = new THREE.Mesh(resolved.geometry, material);
         resolved.geometry.computeVertexNormals();
         scene.add(mesh);
+
+        let wireframeMesh = null;
+        if (showWireframe) {
+            const wireGeo = new THREE.WireframeGeometry(resolved.geometry);
+            const wireMat = new THREE.LineBasicMaterial({
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.45,
+                depthTest: true,
+            });
+            wireframeMesh = new THREE.LineSegments(wireGeo, wireMat);
+            scene.add(wireframeMesh);
+        }
 
         const raycaster = new THREE.Raycaster();
         const ndc = new THREE.Vector2();
@@ -433,6 +477,12 @@ const ThreeViewer = ({
             scene.remove(mesh);
             material.dispose();
 
+            if (wireframeMesh !== null) {
+                scene.remove(wireframeMesh);
+                wireframeMesh.geometry.dispose();
+                wireframeMesh.material.dispose();
+            }
+
             if (highlightMesh !== null) {
                 scene.remove(highlightMesh);
                 highlightMesh.geometry.dispose();
@@ -454,7 +504,7 @@ const ThreeViewer = ({
                 mount.removeChild(renderer.domElement);
             }
         };
-    }, [disposeGeometryOnUnmount, onFaceClick, resolved]);
+    }, [disposeGeometryOnUnmount, onFaceClick, resolved, showWireframe]);
 
     return (
         <div

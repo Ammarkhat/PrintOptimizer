@@ -84,10 +84,45 @@
     word-break: break-all;
 }
 
+.re-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.85rem;
+    color: #cbd5e1;
+    cursor: pointer;
+}
+
+.re-toggle input {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: #60a5fa;
+}
+
+.re-toggle input:disabled+span {
+    color: #64748b;
+}
+
 .status-msg {
     margin: 0;
     font-size: 0.875rem;
+    color: #93c5fd;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.status-msg.status-success {
     color: #86efac;
+}
+
+.status-msg.status-warning {
+    color: #facc15;
+}
+
+.status-msg.status-error {
+    color: #fda4af;
 }
 
 .re-stats {
@@ -118,6 +153,89 @@
 .re-stats li {
     font-size: 0.82rem;
     color: #94a3b8;
+}
+
+.remesh-stat-row {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0;
+}
+
+.remesh-stat-label {
+    flex: 1;
+    color: #64748b;
+    font-size: 0.8rem;
+}
+
+.remesh-stat-before {
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
+.remesh-stat-arrow {
+    color: #334155;
+    font-size: 0.75rem;
+}
+
+.remesh-stat-after {
+    color: #86efac;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.remesh-stat-target-val {
+    color: #7dd3fc;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.btn.btn-download {
+    background: transparent;
+    color: #7dd3fc;
+    border: 1px solid #38bdf8;
+    font-size: 0.85rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn.btn-download:hover:not(:disabled) {
+    background: rgba(56, 189, 248, 0.12);
+    color: #e0f2fe;
+}
+
+.btn.btn-download:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.inline-spinner {
+    width: 0.95rem;
+    height: 0.95rem;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.28);
+    border-top-color: currentColor;
+    animation: re-spin 0.8s linear infinite;
+    flex: 0 0 auto;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.status-spinner {
+    width: 0.85rem;
+    height: 0.85rem;
+}
+
+@keyframes re-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .re-hints {
