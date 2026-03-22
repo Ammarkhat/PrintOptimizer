@@ -170,7 +170,13 @@ const createPrinterBed = (renderer, { width = 256, depth = 256 } = {}) => {
  * - THREE.BufferGeometry
  * - ArrayBuffer containing STL data (parsed with STLLoader)
  */
-const ThreeViewer = ({ geometry, style, className }) => {
+const ThreeViewer = ({
+    geometry,
+    style,
+    className,
+    onFaceClick,
+    disposeGeometryOnUnmount = false,
+}) => {
     const mountRef = useRef(null);
 
     const resolved = useMemo(() => resolveGeometry(geometry), [geometry]);
@@ -206,17 +212,190 @@ const ThreeViewer = ({ geometry, style, className }) => {
             color: 0x93c5fd,
             metalness: 0.1,
             roughness: 0.75,
+            vertexColors: Boolean(resolved.geometry.getAttribute?.('color')),
         });
 
         const mesh = new THREE.Mesh(resolved.geometry, material);
         resolved.geometry.computeVertexNormals();
         scene.add(mesh);
 
+        const raycaster = new THREE.Raycaster();
+        const ndc = new THREE.Vector2();
+        let pointerDown = null;
+        let hoveredFaceIndex = null;
+        let highlightMesh = null;
+        let normalArrow = null;
+
+        // Create a material for highlighting hovered faces
+        const highlightMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff6b35,
+            metalness: 0.3,
+            roughness: 0.5,
+            emissive: 0xff6b35,
+            emissiveIntensity: 0.7,
+            wireframe: false,
+        });
+
+        const pickFaceAtPointer = (clientX, clientY) => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+            ndc.set(x, y);
+            raycaster.setFromCamera(ndc, camera);
+
+            const hits = raycaster.intersectObject(mesh, false);
+            const hit = hits[0];
+            if (!hit) return null;
+
+            const geom = mesh.geometry;
+            const pos = geom.getAttribute('position');
+            if (!pos) return null;
+
+            // Determine triangle vertex indices
+            const faceIndex =
+                typeof hit.faceIndex === 'number' ? hit.faceIndex : null;
+            if (faceIndex === null) return null;
+
+            let ia;
+            let ib;
+            let ic;
+
+            if (geom.index) {
+                const idx = geom.index;
+                const tri = faceIndex * 3;
+                ia = idx.getX(tri);
+                ib = idx.getX(tri + 1);
+                ic = idx.getX(tri + 2);
+            } else {
+                ia = faceIndex * 3;
+                ib = ia + 1;
+                ic = ia + 2;
+            }
+
+            const a = new THREE.Vector3().fromBufferAttribute(pos, ia);
+            const b = new THREE.Vector3().fromBufferAttribute(pos, ib);
+            const c = new THREE.Vector3().fromBufferAttribute(pos, ic);
+
+            const normal = new THREE.Vector3()
+                .subVectors(b, a)
+                .cross(new THREE.Vector3().subVectors(c, a))
+                .normalize();
+
+            if (!Number.isFinite(normal.x) || !Number.isFinite(normal.y) || !Number.isFinite(normal.z)) {
+                return null;
+            }
+
+            return { normal, faceIndex, vertices: [a, b, c] };
+        };
+
+        const updateHoverHighlight = (clientX, clientY) => {
+            const faceData = pickFaceAtPointer(clientX, clientY);
+            const newFaceIndex = faceData ? faceData.faceIndex : null;
+
+            // Only update if face changed
+            if (newFaceIndex === hoveredFaceIndex) return;
+
+            // Clear previous highlight mesh and arrow
+            if (highlightMesh !== null) {
+                scene.remove(highlightMesh);
+                highlightMesh.geometry.dispose();
+                highlightMesh = null;
+            }
+            if (normalArrow !== null) {
+                scene.remove(normalArrow);
+                normalArrow = null;
+            }
+
+            // Create new highlight mesh and arrow for hovered face
+            if (newFaceIndex !== null && faceData) {
+                const faceGeo = new THREE.BufferGeometry();
+                faceGeo.setFromPoints(faceData.vertices);
+                highlightMesh = new THREE.Mesh(faceGeo, highlightMaterial);
+                scene.add(highlightMesh);
+
+                // Calculate the center of the face
+                const faceCenter = new THREE.Vector3()
+                    .add(faceData.vertices[0])
+                    .add(faceData.vertices[1])
+                    .add(faceData.vertices[2])
+                    .divideScalar(3);
+
+                // Calculate the arrow length based on the mesh size
+                const box = new THREE.Box3().setFromObject(mesh);
+                const size = box.getSize(new THREE.Vector3());
+                const arrowLength = Math.max(size.x, size.y, size.z) * 0.1;
+
+                // Create arrow pointing outward along the normal
+                const arrowColor = 0xffaa00;
+                normalArrow = new THREE.ArrowHelper(
+                    faceData.normal.normalize(),
+                    faceCenter,
+                    arrowLength,
+                    arrowColor,
+                    arrowLength * 0.3,
+                    arrowLength * 0.2
+                );
+                scene.add(normalArrow);
+            }
+
+            hoveredFaceIndex = newFaceIndex;
+        };
+
+        const pickFaceNormal = (clientX, clientY) => {
+            if (typeof onFaceClick !== 'function') return;
+
+            const faceData = pickFaceAtPointer(clientX, clientY);
+            if (faceData) {
+                onFaceClick(faceData);
+            }
+        };
+
+        const onPointerDown = (e) => {
+            if (e.button !== 0) return;
+            pointerDown = { x: e.clientX, y: e.clientY };
+        };
+
+        const onPointerUp = (e) => {
+            if (e.button !== 0 || !pointerDown) return;
+            const dx = e.clientX - pointerDown.x;
+            const dy = e.clientY - pointerDown.y;
+            pointerDown = null;
+
+            // Treat as click only if not a drag.
+            if (dx * dx + dy * dy <= 16) {
+                pickFaceNormal(e.clientX, e.clientY);
+            }
+        };
+
+        const onPointerMove = (e) => {
+            updateHoverHighlight(e.clientX, e.clientY);
+        };
+
+        const onPointerLeave = () => {
+            // Clear highlight when pointer leaves canvas
+            if (highlightMesh !== null) {
+                scene.remove(highlightMesh);
+                highlightMesh.geometry.dispose();
+                highlightMesh = null;
+            }
+            if (normalArrow !== null) {
+                scene.remove(normalArrow);
+                normalArrow = null;
+            }
+            hoveredFaceIndex = null;
+        };
+
+        renderer.domElement.addEventListener('pointerdown', onPointerDown);
+        renderer.domElement.addEventListener('pointerup', onPointerUp);
+        renderer.domElement.addEventListener('pointermove', onPointerMove);
+        renderer.domElement.addEventListener('pointerleave', onPointerLeave);
+
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
         controls.rotateSpeed = 0.8;
-        controls.maxPolarAngle = Math.PI * 0.495;
+        // Allow orbiting below the model to inspect underside highlights.
+        controls.maxPolarAngle = Math.PI;
 
         fitCameraToObject({ camera, controls, object: mesh });
 
@@ -243,12 +422,30 @@ const ThreeViewer = ({ geometry, style, className }) => {
 
             controls.dispose();
 
+            renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+            renderer.domElement.removeEventListener('pointerup', onPointerUp);
+            renderer.domElement.removeEventListener('pointermove', onPointerMove);
+            renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
+
             scene.remove(bed);
             bed.userData.dispose?.();
 
             scene.remove(mesh);
             material.dispose();
+
+            if (highlightMesh !== null) {
+                scene.remove(highlightMesh);
+                highlightMesh.geometry.dispose();
+            }
+            highlightMaterial.dispose();
+
+            if (normalArrow !== null) {
+                scene.remove(normalArrow);
+            }
+
             if (resolved.ownsGeometry) {
+                resolved.geometry.dispose();
+            } else if (disposeGeometryOnUnmount) {
                 resolved.geometry.dispose();
             }
 
@@ -257,7 +454,7 @@ const ThreeViewer = ({ geometry, style, className }) => {
                 mount.removeChild(renderer.domElement);
             }
         };
-    }, [resolved]);
+    }, [disposeGeometryOnUnmount, onFaceClick, resolved]);
 
     return (
         <div

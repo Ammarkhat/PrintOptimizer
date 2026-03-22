@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -6,6 +6,7 @@ import ThreeViewer from '../components/ThreeViewer';
 import useAppStore from '../store/useAppStore';
 import { uploadSTL, saveOptimizationRecord } from '../firebase/storageService';
 import { optimizeSupportReduction } from '../optimization/optimizeSupportReduction';
+import { computeSupportHighlightGeometry } from '../optimization/supportAnalysis';
 import './SupportOptimizerPage.css';
 
 const SupportOptimizerPage = () => {
@@ -30,6 +31,7 @@ const SupportOptimizerPage = () => {
     const [statusMsg, setStatusMsg] = useState('');
     const [isLoadingFile, setIsLoadingFile] = useState(false);
     const [isUploadingOriginal, setIsUploadingOriginal] = useState(false);
+    const [supportAngleDeg, setSupportAngleDeg] = useState(45);
 
     const placeGeometryOnBed = (geometry) => {
         geometry.computeBoundingBox();
@@ -150,6 +152,26 @@ const SupportOptimizerPage = () => {
 
     const isBusy = isLoadingFile || isUploadingOriginal || optimizationStatus === 'loading';
 
+    const supportAnalysis = useMemo(() => {
+        if (!currentGeometry) return null;
+        return computeSupportHighlightGeometry(currentGeometry, supportAngleDeg);
+    }, [currentGeometry, supportAngleDeg]);
+
+    const handleFaceClick = ({ normal }) => {
+        if (!currentGeometry || !normal) return;
+
+        // Align clicked face normal to point downward (-Y), so the face lies "down" on the bed.
+        const from = normal.clone().normalize();
+        const to = new THREE.Vector3(0, -1, 0);
+        const quat = new THREE.Quaternion().setFromUnitVectors(from, to);
+
+        const aligned = currentGeometry.clone();
+        aligned.applyQuaternion(quat);
+        placeGeometryOnBed(aligned);
+        setCurrentGeometry(aligned);
+        setStatusMsg('Aligned to selected face.');
+    };
+
     return (
         <main className="sr-page">
             <div className="sr-header">
@@ -162,8 +184,12 @@ const SupportOptimizerPage = () => {
 
             <div className="sr-layout">
                 <div className="sr-viewer">
-                    {currentGeometry ? (
-                        <ThreeViewer geometry={currentGeometry} />
+                    {supportAnalysis?.geometry ? (
+                        <ThreeViewer
+                            geometry={supportAnalysis.geometry}
+                            disposeGeometryOnUnmount
+                            onFaceClick={handleFaceClick}
+                        />
                     ) : (
                         <div className="sr-viewer-placeholder">
                             <span>🗂️</span>
@@ -174,6 +200,40 @@ const SupportOptimizerPage = () => {
 
                 <aside className="sr-controls">
                     <h3>Controls</h3>
+
+                    <div className="sr-control-block">
+                        <label className="sr-label" htmlFor="support-angle">
+                            Support angle
+                        </label>
+                        <div className="sr-angle-row">
+                            <input
+                                id="support-angle"
+                                type="range"
+                                min="15"
+                                max="80"
+                                step="1"
+                                value={supportAngleDeg}
+                                onChange={(e) => setSupportAngleDeg(Number(e.target.value))}
+                                disabled={!currentGeometry}
+                            />
+                            <input
+                                className="sr-angle-input"
+                                type="number"
+                                min="0"
+                                max="89"
+                                step="1"
+                                value={supportAngleDeg}
+                                onChange={(e) => setSupportAngleDeg(Number(e.target.value))}
+                                disabled={!currentGeometry}
+                            />
+                            <span className="sr-angle-unit">°</span>
+                        </div>
+                        <p className="sr-metric">
+                            {supportAnalysis
+                                ? `Faces needing support: ${supportAnalysis.supportPercent.toFixed(1)}%`
+                                : 'Faces needing support: —'}
+                        </p>
+                    </div>
 
                     <button
                         className="btn btn-primary"
@@ -216,6 +276,7 @@ const SupportOptimizerPage = () => {
                     <div className="sr-hints">
                         <h4>Viewer controls</h4>
                         <ul>
+                            <li>🖱️ Click a face — align it to bed</li>
                             <li>🖱️ Left drag — rotate</li>
                             <li>🖱️ Right drag — pan</li>
                             <li>🖱️ Scroll — zoom</li>
