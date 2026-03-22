@@ -1,0 +1,149 @@
+.re-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.re-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.re-header h2 {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.re-layout {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .re-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.re-viewer {
+    background: #1a1a2e;
+    border: 1px solid #0f3460;
+    border-radius: 12px;
+    overflow: hidden;
+    min-height: 72vh;
+}
+
+.re-viewer-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 72vh;
+    gap: 1rem;
+    color: #475569;
+}
+
+.re-viewer-placeholder span {
+    font-size: 3rem;
+}
+
+.re-viewer-placeholder p {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.re-controls {
+    background: #1e293b;
+    border: 1px solid #0f3460;
+    border-radius: 12px;
+    padding: 1.25rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.re-controls h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.file-name {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #64748b;
+    word-break: break-all;
+}
+
+.status-msg {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #86efac;
+}
+
+.re-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.8rem;
+    border: 1px solid #0f3460;
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.35);
+}
+
+.re-stats h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #f1f5f9;
+}
+
+.re-stats ul {
+    margin: 0;
+    padding-left: 1rem;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.re-stats li {
+    font-size: 0.82rem;
+    color: #94a3b8;
+}
+
+.re-hints {
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid #0f3460;
+}
+
+.re-hints h4 {
+    margin: 0 0 0.4rem;
+    font-size: 0.8rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.re-hints ul {
+    margin: 0;
+    padding-left: 1rem;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.re-hints li {
+    font-size: 0.8rem;
+    color: #475569;
+}

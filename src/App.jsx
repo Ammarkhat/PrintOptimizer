@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import SupportOptimizerPage from './pages/SupportOptimizerPage';
+import ReverseEngineeringPage from './pages/ReverseEngineeringPage';
 
 function App() {
   useAuthListener();
@@ -23,6 +24,7 @@ function App() {
         >
           <Route index element={<DashboardPage />} />
           <Route path="support-optimizer" element={<SupportOptimizerPage />} />
+          <Route path="reverse-engineer" element={<ReverseEngineeringPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

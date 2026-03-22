@@ -11,6 +11,14 @@ const tools = [
     icon: '🏗️',
     path: '/support-optimizer',
   },
+  {
+    id: 'reverse-engineering',
+    title: 'Reverse Engineering',
+    description:
+      'Upload an STL or PLY model to inspect geometry and generate reverse engineering stats.',
+    icon: '🧩',
+    path: '/reverse-engineer',
+  },
 ];
 
 const DashboardPage = () => {
