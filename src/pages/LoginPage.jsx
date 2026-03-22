@@ -32,9 +32,11 @@ const LoginPage = () => {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1 className="login-title">🖨️ PrintOptimizer</h1>
+        <h1 className="login-title">🧰 3D Tools Playground</h1>
         <p className="login-subtitle">
-          {isRegister ? 'Create an account' : 'Sign in to continue'}
+          {isRegister
+            ? 'Create an account to explore and validate 3D SaaS tools'
+            : 'Sign in to upload models or images and try 3D tools one by one'}
         </p>
 
         <form onSubmit={handleSubmit} className="login-form">

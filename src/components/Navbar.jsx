@@ -20,7 +20,7 @@ const Navbar = () => {
           tabIndex={0}
           onKeyDown={(e) => e.key === 'Enter' && navigate('/')}
         >
-          🖨️ PrintOptimizer
+          🧰 3D Tools Playground
         </span>
 
         <div className="navbar-links">
@@ -33,14 +33,14 @@ const Navbar = () => {
           >
             Dashboard
           </NavLink>
-          <NavLink
+          {/* <NavLink
             to="/support-optimizer"
             className={({ isActive }) =>
               `navbar-link${isActive ? ' is-active' : ''}`
             }
           >
             Support Optimizer
-          </NavLink>
+          </NavLink> */}
         </div>
       </div>
       <div className="navbar-actions">

@@ -29,12 +29,14 @@ const DashboardPage = () => {
     <main className="dashboard">
       <header className="dashboard-header">
         <div className="dashboard-header-row">
-          <h2>Optimization Tools</h2>
+          <h2>3D Tools Playground</h2>
           <p className="dashboard-greeting">
             {user?.email ? `Signed in as ${user.email}` : ''}
           </p>
         </div>
-        <p>Select a tool to get started with your 3D print optimization.</p>
+        <p>
+          Upload a 3D model or image, try a tool, and compare which 3D SaaS workflow delivers the best return.
+        </p>
       </header>
 
       <div className="tools-grid">
