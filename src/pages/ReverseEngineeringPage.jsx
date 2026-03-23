@@ -87,6 +87,7 @@ const ReverseEngineeringPage = () => {
 
     const [originalFile, setOriginalFile] = useState(null);
     const [currentGeometry, setCurrentGeometry] = useState(null);
+    const [geometryHistory, setGeometryHistory] = useState([]);
     const [statusMsg, setStatusMsg] = useState('');
     const [statusTone, setStatusTone] = useState('info');
     const [analysis, setAnalysis] = useState(null);
@@ -94,20 +95,48 @@ const ReverseEngineeringPage = () => {
     const [isPreprocessing, setIsPreprocessing] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [remeshStats, setRemeshStats] = useState(null);
+    const [remeshProgressPct, setRemeshProgressPct] = useState(null);
+    const [remeshProgressStage, setRemeshProgressStage] = useState('');
     const [showWireframe, setShowWireframe] = useState(false);
+    // Track which action is in progress: null | 'undo' | 'wireframe'
+    const [inProgressAction, setInProgressAction] = useState(null);
 
     const updateStatus = (message, tone = 'info') => {
         setStatusMsg(message);
         setStatusTone(tone);
     };
 
-    const replaceGeometry = (nextGeometry) => {
+    // Push previous geometry to history before replacing
+    const replaceGeometry = (nextGeometry, { pushHistory = false } = {}) => {
         setCurrentGeometry((previousGeometry) => {
             if (previousGeometry && previousGeometry !== nextGeometry) {
-                previousGeometry.dispose();
+                if (pushHistory) {
+                    setGeometryHistory((history) => [previousGeometry.clone(), ...history]);
+                } else {
+                    previousGeometry.dispose();
+                }
             }
             return nextGeometry;
         });
+    };
+
+    // Undo: restore previous geometry from history
+    const handleUndo = async () => {
+        setInProgressAction('undo');
+        await new Promise((resolve) => setTimeout(resolve, 10)); // allow spinner to show
+        setGeometryHistory((history) => {
+            if (history.length === 0) return history;
+            const [prev, ...rest] = history;
+            setCurrentGeometry((current) => {
+                if (current) current.dispose();
+                return prev;
+            });
+            return rest;
+        });
+        setRemeshStats(null);
+        setAnalysis(null);
+        updateStatus('Undid last operation.', 'info');
+        setInProgressAction(null);
     };
 
     useEffect(() => {
@@ -185,19 +214,63 @@ const ReverseEngineeringPage = () => {
         if (!currentGeometry || isPreprocessing) return;
 
         setAnalysis(null);
+        setRemeshProgressPct(0);
+        setRemeshProgressStage('Preparing…');
         setIsPreprocessing(true);
         updateStatus('Remeshing and smoothing model…', 'info');
 
         try {
-            const result = await remeshAndSmoothGeometry(currentGeometry);
+            await waitForNextPaint();
+
+            let lastReportedPct = -1;
+            const result = await remeshAndSmoothGeometry(currentGeometry, {
+                onProgress: ({ stage, progress }) => {
+                    if (stage === 'preparing') {
+                        setRemeshProgressStage('Preparing input…');
+                        setRemeshProgressPct(0);
+                        lastReportedPct = 0;
+                        return true;
+                    }
+
+                    if (stage === 'native') {
+                        const normalized = Number.isFinite(progress) ? Math.min(Math.max(progress, 0), 1) : 0;
+                        const nextPct = Math.round(normalized * 100);
+
+                        if (nextPct >= lastReportedPct + 2 || nextPct === 100 || nextPct === 0) {
+                            lastReportedPct = nextPct;
+                            setRemeshProgressPct(nextPct);
+                        }
+
+                        setRemeshProgressStage('Native remeshing…');
+                        return true;
+                    }
+
+                    if (stage === 'fallback') {
+                        setRemeshProgressStage('Fallback remeshing…');
+                        setRemeshProgressPct(null);
+                        return true;
+                    }
+
+                    if (stage === 'done') {
+                        setRemeshProgressStage('Finalizing…');
+                        setRemeshProgressPct(100);
+                        return true;
+                    }
+
+                    return true;
+                },
+            });
+
             const geometry = placeGeometryOnBed(result.geometry);
-            replaceGeometry(geometry);
+            replaceGeometry(geometry, { pushHistory: true });
             setRemeshStats(result.stats);
             updateStatus('Mesh pre-processing complete.', 'success');
         } catch (error) {
             console.error(error);
             updateStatus('Remesh and smooth failed. Please try again.', 'error');
         } finally {
+            setRemeshProgressPct(null);
+            setRemeshProgressStage('');
             setIsPreprocessing(false);
         }
     };
@@ -233,6 +306,28 @@ const ReverseEngineeringPage = () => {
         a.download = `${stem}_processed.ply`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    const waitForNextPaint = () =>
+        new Promise((resolve) => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(resolve);
+            });
+        });
+
+    // Handle wireframe toggle with spinner for large meshes.
+    // We wait for paint first so the spinner is visible before heavy wireframe work starts.
+    const handleWireframeToggle = async (event) => {
+        const nextChecked = event.target.checked;
+        if (!currentGeometry || isBusy || inProgressAction === 'wireframe') return;
+
+        setInProgressAction('wireframe');
+        await waitForNextPaint();
+
+        setShowWireframe(nextChecked);
+
+        await waitForNextPaint();
+        setInProgressAction(null);
     };
 
     return (
@@ -281,11 +376,17 @@ const ReverseEngineeringPage = () => {
                             id="toggle-wireframe"
                             type="checkbox"
                             checked={showWireframe}
-                            onChange={(event) => setShowWireframe(event.target.checked)}
-                            disabled={!currentGeometry || isBusy}
+                            onChange={handleWireframeToggle}
+                            disabled={!currentGeometry || isBusy || inProgressAction === 'wireframe'}
                         />
-                        <span>Show Wireframe</span>
+                        <span>
+                            Show Wireframe
+                            {inProgressAction === 'wireframe' && (
+                                <span className="inline-spinner" style={{ marginLeft: 6 }} aria-hidden="true" />
+                            )}
+                        </span>
                     </label>
+
 
                     <button
                         className="btn btn-outline"
@@ -298,6 +399,22 @@ const ReverseEngineeringPage = () => {
                                 <span>Remeshing…</span>
                             </>
                         ) : '🧼 Remesh and Smooth'}
+                    </button>
+
+                    <button
+                        className="btn btn-secondary"
+                        onClick={handleUndo}
+                        disabled={geometryHistory.length === 0 || isBusy || inProgressAction === 'undo'}
+                        style={{ marginBottom: '0.5rem', position: 'relative' }}
+                    >
+                        {inProgressAction === 'undo' ? (
+                            <>
+                                <span className="inline-spinner" aria-hidden="true" style={{ marginRight: 6 }} />
+                                Undoing…
+                            </>
+                        ) : (
+                            '↩ Undo'
+                        )}
                     </button>
 
                     <button
@@ -321,6 +438,22 @@ const ReverseEngineeringPage = () => {
                             {isPreprocessing && <span className="inline-spinner status-spinner" aria-hidden="true" />}
                             <span>{statusMsg}</span>
                         </p>
+                    )}
+
+                    {isPreprocessing && (
+                        <div className="remesh-progress" role="status" aria-live="polite">
+                            <div className="remesh-progress-header">
+                                <span>Progress</span>
+                                <span>{remeshProgressPct !== null ? `${remeshProgressPct}%` : 'Working…'}</span>
+                            </div>
+                            <div className="remesh-progress-track" aria-hidden="true">
+                                <div
+                                    className="remesh-progress-fill"
+                                    style={{ width: `${remeshProgressPct !== null ? remeshProgressPct : 100}%` }}
+                                />
+                            </div>
+                            {remeshProgressStage && <div className="remesh-progress-stage">{remeshProgressStage}</div>}
+                        </div>
                     )}
 
                     {remeshStats && (
