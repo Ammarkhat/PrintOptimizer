@@ -234,9 +234,9 @@ const ReverseEngineeringPage = () => {
 
                     if (stage === 'native') {
                         const normalized = Number.isFinite(progress) ? Math.min(Math.max(progress, 0), 1) : 0;
-                        const nextPct = Math.round(normalized * 100);
+                        const nextPct = Math.round(5 + normalized * 87);
 
-                        if (nextPct >= lastReportedPct + 2 || nextPct === 100 || nextPct === 0) {
+                        if (nextPct >= lastReportedPct + 2 || nextPct === 92 || nextPct === 5) {
                             lastReportedPct = nextPct;
                             setRemeshProgressPct(nextPct);
                         }
@@ -252,8 +252,8 @@ const ReverseEngineeringPage = () => {
                     }
 
                     if (stage === 'done') {
-                        setRemeshProgressStage('Finalizing…');
-                        setRemeshProgressPct(100);
+                        setRemeshProgressStage('Applying remesh result…');
+                        setRemeshProgressPct(94);
                         return true;
                     }
 
@@ -261,9 +261,23 @@ const ReverseEngineeringPage = () => {
                 },
             });
 
+            setRemeshProgressStage('Preparing final geometry…');
+            setRemeshProgressPct(96);
+            await waitForNextPaint();
+
             const geometry = placeGeometryOnBed(result.geometry);
+
+            setRemeshProgressStage('Updating viewer…');
+            setRemeshProgressPct(98);
+            await waitForNextPaint();
+
             replaceGeometry(geometry, { pushHistory: true });
             setRemeshStats(result.stats);
+
+            setRemeshProgressStage('Complete');
+            setRemeshProgressPct(100);
+            await waitForNextPaint();
+
             updateStatus('Mesh pre-processing complete.', 'success');
         } catch (error) {
             console.error(error);

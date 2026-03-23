@@ -6,6 +6,12 @@ let remeshModulePromise = null;
 let remeshScriptPromise = null;
 const REMESH_SCRIPT_PATH = '/remesh/Remesh.js';
 const REMESH_WASM_PATH = '/remesh/Remesh.wasm';
+const REMESH_WORKER_PATH = '/remesh/remeshWorker.js';
+
+let remeshWorker = null;
+let remeshWorkerRequestId = 0;
+const remeshWorkerPendingRequests = new Map();
+let remeshWorkerDisabledReason = null;
 
 const SMOOTHING_ITERATIONS = 50;
 const TARGET_EDGE_SCALE = 1;
@@ -17,6 +23,7 @@ const MIN_NATIVE_TARGET_EDGE = 1e-6;
 const MIN_NATIVE_TARGET_EDGE_BBOX_SCALE = 1e-6;
 const MAX_NATIVE_TARGET_EDGE_BBOX_SCALE = 0.25;
 const MIN_NATIVE_TRIANGLE_AREA_SQUARED = 1e-24;
+const NATIVE_WORKER_TIMEOUT_MS = 360000;
 const TAUBIN_LAMBDA = 0.5;
 const TAUBIN_MU = -0.53;
 
@@ -376,11 +383,209 @@ const nativeOutputToGeometry = (positionArray, indexArray) => {
     return geometry;
 };
 
+const canUseRemeshWorker = () => typeof Worker !== 'undefined' && typeof window !== 'undefined';
+
+const terminateRemeshWorker = () => {
+    if (!remeshWorker) {
+        return;
+    }
+
+    try {
+        remeshWorker.terminate();
+    } catch {
+        // Best-effort termination.
+    }
+
+    remeshWorker = null;
+};
+
+const rejectAllWorkerRequests = (reason) => {
+    for (const pending of remeshWorkerPendingRequests.values()) {
+        pending.reject(new Error(reason));
+    }
+    remeshWorkerPendingRequests.clear();
+};
+
+const getRemeshWorker = () => {
+    if (!canUseRemeshWorker()) {
+        return null;
+    }
+
+    if (remeshWorker) {
+        return remeshWorker;
+    }
+
+    const worker = new Worker(REMESH_WORKER_PATH);
+
+    worker.onmessage = (event) => {
+        const message = event?.data;
+        const requestId = message?.requestId;
+        if (!requestId || !remeshWorkerPendingRequests.has(requestId)) {
+            return;
+        }
+
+        const pending = remeshWorkerPendingRequests.get(requestId);
+        if (!pending) {
+            return;
+        }
+
+        if (message.type === 'progress') {
+            try {
+                const shouldContinue = pending.onProgress?.(message.progress) !== false;
+                if (!shouldContinue) {
+                    remeshWorkerPendingRequests.delete(requestId);
+                    pending.reject(new Error('Native remesh was cancelled.'));
+                    terminateRemeshWorker();
+                }
+            } catch (callbackError) {
+                console.warn('Worker remesh progress callback threw an error:', callbackError);
+            }
+            return;
+        }
+
+        remeshWorkerPendingRequests.delete(requestId);
+
+        if (message.type === 'result') {
+            pending.resolve(message);
+            return;
+        }
+
+        if (message.type === 'error') {
+            pending.reject(new Error(message.reason || 'Worker remesh failed.'));
+        }
+    };
+
+    worker.onerror = () => {
+        rejectAllWorkerRequests('Remesh worker crashed.');
+        terminateRemeshWorker();
+    };
+
+    remeshWorker = worker;
+    return remeshWorker;
+};
+
+const runNativeRemeshInWorker = async (positionArray, indexArray, targetEdgeLength, onProgress = null) => {
+    if (remeshWorkerDisabledReason) {
+        return {
+            supported: false,
+            reason: `Worker remesh is disabled: ${remeshWorkerDisabledReason}`,
+        };
+    }
+
+    const worker = getRemeshWorker();
+    if (!worker) {
+        return {
+            supported: false,
+            reason: 'Web Worker API is unavailable in this environment.',
+        };
+    }
+
+    const requestId = `rw-${Date.now().toString(36)}-${(remeshWorkerRequestId += 1).toString(36)}`;
+
+    const positionPayload = new Float32Array(positionArray);
+    const indexPayload = new Uint32Array(indexArray);
+
+    let lastProgress = 0;
+    const reportProgress = (progress) => {
+        const normalized = Number.isFinite(progress) ? Math.min(Math.max(progress, 0), 1) : 0;
+        if (normalized <= lastProgress) {
+            return true;
+        }
+        lastProgress = normalized;
+        return onProgress?.(normalized) !== false;
+    };
+
+    reportProgress(0.01);
+
+    const heartbeat = setInterval(() => {
+        const heartbeatProgress = Math.min(0.85, lastProgress + 0.01);
+        reportProgress(heartbeatProgress);
+    }, 1500);
+
+    let response;
+    let settled = false;
+
+    try {
+        response = await new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+
+                settled = true;
+                remeshWorkerPendingRequests.delete(requestId);
+                terminateRemeshWorker();
+                reject(new Error(`Native worker remesh timed out after ${Math.round(NATIVE_WORKER_TIMEOUT_MS / 1000)}s.`));
+            }, NATIVE_WORKER_TIMEOUT_MS);
+
+            const resolveOnce = (value) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timeoutId);
+                resolve(value);
+            };
+
+            const rejectOnce = (error) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timeoutId);
+                reject(error);
+            };
+
+            remeshWorkerPendingRequests.set(requestId, {
+                resolve: resolveOnce,
+                reject: rejectOnce,
+                onProgress: reportProgress,
+            });
+
+            try {
+                worker.postMessage(
+                    {
+                        type: 'remesh',
+                        requestId,
+                        positionArray: positionPayload,
+                        indexArray: indexPayload,
+                        targetEdgeLength,
+                        preserveSharp: true,
+                    },
+                    [positionPayload.buffer, indexPayload.buffer]
+                );
+            } catch (error) {
+                remeshWorkerPendingRequests.delete(requestId);
+                rejectOnce(error instanceof Error ? error : new Error('Failed to post remesh request to worker.'));
+            }
+        });
+    } finally {
+        clearInterval(heartbeat);
+    }
+
+    if (!response?.success) {
+        return {
+            supported: false,
+            reason: response?.reason || 'Worker remesh returned an unsuccessful result.',
+        };
+    }
+
+    const remeshedGeometry = nativeOutputToGeometry(response.positionArray, response.indexArray);
+    if (!remeshedGeometry) {
+        return {
+            supported: false,
+            reason: 'Worker remesh completed, but output geometry was invalid.',
+        };
+    }
+
+    return {
+        supported: true,
+        geometry: remeshedGeometry,
+    };
+};
+
 const tryNativeRemesh = async (geometry, targetEdgeLength, traceId = 'native', onProgress = null) => {
     const timer = createTimingLogger(traceId, 'native', `requestedTarget=${targetEdgeLength}`);
-    const nativeModule = await getRemeshModule();
-    timer.mark('getRemeshModule');
-
     const nativeTargetEdgeLength = clampNativeTargetEdgeLength(geometry, targetEdgeLength);
     timer.mark('clampNativeTargetEdgeLength', `clampedTarget=${nativeTargetEdgeLength}`);
 
@@ -397,6 +602,49 @@ const tryNativeRemesh = async (geometry, targetEdgeLength, traceId = 'native', o
             reason: sanitizedInput.reason,
         };
     }
+
+    try {
+        const workerResult = await runNativeRemeshInWorker(
+            sanitizedInput.positionArray,
+            sanitizedInput.indexArray,
+            nativeTargetEdgeLength,
+            onProgress
+        );
+        timer.mark('runNativeRemeshInWorker', `supported=${workerResult.supported}`);
+
+        if (workerResult.reason?.toLowerCase?.().includes('initialization timed out')) {
+            remeshWorkerDisabledReason = workerResult.reason;
+            terminateRemeshWorker();
+            console.warn(`Worker initialization failed. Disabling worker remesh for this session. Reason: ${workerResult.reason}`);
+        }
+
+        if (workerResult.supported) {
+            timer.mark(
+                'workerOutputToGeometry',
+                `vertices=${workerResult.geometry.getAttribute('position')?.count ?? 0}, faces=${Math.round((workerResult.geometry.getIndex()?.count ?? 0) / 3)}`
+            );
+            timer.end('supported=true | engine=worker');
+            return workerResult;
+        }
+
+        console.warn(`Worker native remeshing unavailable: ${workerResult.reason}. Falling back to main-thread native remesh.`);
+    } catch (workerError) {
+        const workerErrorMessage = workerError instanceof Error ? workerError.message : 'Unknown error';
+        timer.mark('runNativeRemeshInWorker.error', workerError instanceof Error ? workerError.message : 'unknown');
+
+        if (workerErrorMessage.toLowerCase().includes('initialization timed out')) {
+            remeshWorkerDisabledReason = workerErrorMessage;
+            terminateRemeshWorker();
+            console.warn(`Worker initialization timed out. Disabling worker remesh for this session. Reason: ${workerErrorMessage}`);
+        }
+
+        console.warn(
+            `Worker native remeshing failed: ${workerErrorMessage}. Falling back to main-thread native remesh.`
+        );
+    }
+
+    const nativeModule = await getRemeshModule();
+    timer.mark('getRemeshModule(mainThreadFallback)');
 
     if (
         typeof nativeModule.vectorFloatFromTypedArray !== 'function' ||
